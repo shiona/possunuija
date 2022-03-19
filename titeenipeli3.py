@@ -81,6 +81,9 @@ def cast(ws, spell_id):
 
         #['11', '755', 'game:1:4', 'phx_reply', {'response': {'reason': 'Unknown spell'}, 'status': 'error'}]
 
+        #[null,null,"user:111298491","user:exp_updated",{"experience":192487,"":1262,"experience_required":217350,"is_levelup":false,"level":60,"message":"Doomguard dies, you gain 1262 experience.","total_experience":4277062}]
+        if res[3] == "user:exp_updated":
+            print(f"Got exp: {res[4]['experience_change']}")
 
         if res[3] == "phx_reply":
             if "reason" in res[4]['response'] and res[4]['response']['reason'] == 'Unknown player':
