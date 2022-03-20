@@ -20,7 +20,6 @@ URL=args.url
 USER_ID_FIELD="user:"+args.userid
 ROOM=args.room
 
-command_index=12
 first_num=11
 
 MAX_RECV_PACKETS=100
@@ -29,106 +28,115 @@ HEARTBEAT_EVERY_N_ROUNDS=10
 
 #websocket.enableTrace(True)
 
-class NoResponseToCast(Exception):
-    pass
-
-class UnknownPlayerException(Exception):
+class NoResponse(Exception):
     pass
 
 working_nondocumented_spells=[]
 
-def heartbeat(ws):
-    global command_index
-    payload = json.dumps([None,str(command_index),"phoenix","heartbeat",{}])
-    print(f"Sending {payload}")
-    ws.send(payload)
-    command_index += 1
+class Bot():
+    def __init__(self, ws):
+        self.ws = ws
+        self.command_index=12
 
+    def handle_response(self, validator):
+        recv_packets=0
+        #print("")
+        while recv_packets <= MAX_RECV_PACKETS:
+            r = self.ws.recv()
+            res = json.loads(r)
 
-    recv_packets=0
-    while recv_packets <= MAX_RECV_PACKETS:
-        r = ws.recv()
-        #print(r, flush=True)
-        res = json.loads(r)
-        #print(res[3])
+            recv_packets += 1
+            sys.stdout.write(f'\r{recv_packets}/{MAX_RECV_PACKETS}')
 
-        #['11', '755', 'game:1:4', 'phx_reply', {'response': {'reason': 'Unknown spell'}, 'status': 'error'}]
+            if validator(res):
+                print()
+                return True
+        return False
 
+    def send(self, payload):
+        print(f"Sending {payload}")
+        self.ws.send(payload)
 
-        if res[2] == "phoenix" and res[3] == "phx_reply":
-            # Assume it's done
-            print(res)
-            return
+    def _heartbeat_validator(self, res):
+        return res[2] == "phoenix" and res[3] == "phx_reply"
+
+    def heartbeat(self):
+        payload = json.dumps([None,str(self.command_index),"phoenix","heartbeat",{}])
+        print(f"Sending {payload}")
+        self.send(payload)
+        self.command_index += 1
+
+        if not self.handle_response(self._heartbeat_validator):
+            raise NoResponse(payload)
+
+    def _cast_validator(self, res):
+        return res[3] == "phx_reply"
+
+    def cast(self, spell_id):
+        global working_nondocumented_spells
+        #payload = '["11","'+str(self.command_index)+'","game_1:2","game:begin_cast",{"spell_id":'+str(spell_id)+'}]'
+        payload = json.dumps([str(first_num),str(self.command_index),f"game:1:{self.roomid}","game:begin_cast",{"spell_id":spell_id}])
+        #print(f"Sending {payload}")
+        self.send(payload)
+        self.command_index += 1
+
+        if not self.handle_response(self._cast_validator):
+            raise NoResponse(payload)
+
+    def _move_to_room_validator(self, roomid):
+        def validator(res):
+            return res[3] == f"game:1:{roomid}" and "status" in res[4] and res[4]["status"] == "ok"
+        return validator
+
+    def move_to_room(self, roomid):
+
+        payload = json.dumps(["11","11",f"game:1:{roomid}","phx_join",{}])
+
+        self.send(payload)
+
+        if self.handle_response(self._move_to_room_validator):
+            self.roomid = roomid
         else:
-            print("no")
-        recv_packets += 1
-        
-    raise NoResponseToCast()
+            raise NoResponse(payload)
 
-def cast(ws, spell_id):
-    global command_index
-    global working_nondocumented_spells
-    #payload = '["11","'+str(command_index)+'","game_1:2","game:begin_cast",{"spell_id":'+str(spell_id)+'}]'
-    payload = json.dumps([str(first_num),str(command_index),f"game:1:{ROOM}","game:begin_cast",{"spell_id":spell_id}])
-    #print(f"Sending {payload}")
-    ws.send(payload)
-    command_index += 1
 
-    recv_packets=0
-    while recv_packets <= MAX_RECV_PACKETS:
-        res = json.loads(ws.recv())
-        #print(res[3])
-
-        #['11', '755', 'game:1:4', 'phx_reply', {'response': {'reason': 'Unknown spell'}, 'status': 'error'}]
-
-        #[null,null,"user:111298491","user:exp_updated",{"experience":192487,"":1262,"experience_required":217350,"is_levelup":false,"level":60,"message":"Doomguard dies, you gain 1262 experience.","total_experience":4277062}]
-        if res[3] == "user:exp_updated":
-            print(f"Got exp: {res[4]['experience_change']}")
-
-        if res[3] == "phx_reply":
-            if "reason" in res[4]['response'] and res[4]['response']['reason'] == 'Unknown player':
-                raise UnknownPlayerException()
-            # Assume it's done
-            #print(res)
-            if spell_id > 7 or spell_id < 1:
-                if res[4]['response']['reason'] != 'Unknown spell':
-                    working_nondocumented_spells.append(spell_id)
-            return
-        else:
-            #print("no")
-            pass
-        recv_packets += 1
-        
-    raise NoResponseToCast()
-
-def  main(ws):
+def main(ws):
     global working_nondocumented_spells
     print("Sending 'Hello, World'...")
     ws.send(json.dumps(["5","5",USER_ID_FIELD,"phx_join",{}]))
     print(ws.recv())
     ws.send(json.dumps(["8","8","chat:global","phx_join",{}]))
     print(ws.recv())
-    ws.send(json.dumps(["11","11",f"game:1:{ROOM}","phx_join",{}]))
-    print(ws.recv())
+    #ws.send(json.dumps(["11","11",f"game:1:{ROOM}","phx_join",{}]))
+    #print(ws.recv())
+
     print("Sent")
+
+    bot = Bot(ws)
+
+    bot.move_to_room(ROOM)
 
     rounds_since_heartbeat=0
     while(1):
         print('.')
-        cast(ws, 1)
-        cast(ws, 2)
-        cast(ws, 3)
-        cast(ws, 4)
-        cast(ws, 5)
-        cast(ws, 6)
-        cast(ws, 7)
-        sleep(1)
-        cast(ws, 1)
-        sleep(1)
-        cast(ws, 1)
-        cast(ws, 2)
-        sleep(1)
-        cast(ws, 1)
+        bot.cast(1)
+        bot.cast(2)
+        bot.cast(3)
+        bot.cast(4)
+        bot.cast(5)
+        bot.cast(6)
+        bot.cast(7)
+        sleep(0.4)
+        bot.cast(1)
+        sleep(0.4)
+        bot.cast(1)
+        sleep(0.4)
+        bot.cast(1)
+        bot.cast(2)
+        sleep(0.4)
+        bot.cast(1)
+        sleep(0.4)
+        bot.cast(1)
 
         #spell_id_to_test = random.randint(-10000,10000)
         #cast(ws, spell_id_to_test)
@@ -137,7 +145,7 @@ def  main(ws):
         rounds_since_heartbeat += 1
         if rounds_since_heartbeat > HEARTBEAT_EVERY_N_ROUNDS:
         #if True:
-            heartbeat(ws)
+            bot.heartbeat()
             rounds_since_heartbeat = 0
 
         
