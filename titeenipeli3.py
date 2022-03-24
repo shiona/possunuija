@@ -48,6 +48,9 @@ class Bot():
             recv_packets += 1
             sys.stdout.write(f'\r{recv_packets}/{MAX_RECV_PACKETS}')
 
+            if self.is_connected_msg(res):
+                self.greet(res[4]['username'])
+
             if validator(res):
                 print()
                 return True
@@ -56,6 +59,14 @@ class Bot():
     def send(self, payload):
         print(f"Sending {payload}")
         self.ws.send(payload)
+
+    def greet(self, username):
+        payload = json.dumps([str(self.roomid), self.command_index, "chat:global", "chat:send_global_message", { "text": f"Moronääs {username}" }])
+        self.send(payload)
+        self.command_index += 1
+
+    def is_connected_msg(self, res):
+        return res[3] == "game:player_connected"
 
     def _heartbeat_validator(self, res):
         return res[2] == "phoenix" and res[3] == "phx_reply"
